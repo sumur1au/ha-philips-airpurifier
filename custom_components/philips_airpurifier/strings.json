@@ -123,6 +123,7 @@
             "name": "Preset mode",
             "state": {
               "auto": "Auto",
+              "auto_plus": "Auto+",
               "high": "High",
               "medium": "Medium",
               "low": "Low",
