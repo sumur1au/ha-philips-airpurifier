@@ -91,6 +91,7 @@
           "preset_mode": {
             "state": {
               "auto": "mdi:autorenew",
+              "auto_plus": "mdi:autorenew",
               "high": "mdi:thermometer-high",
               "medium": "mdi:thermometer",
               "low": "mdi:thermometer-low",
