@@ -1096,7 +1096,7 @@ HUMIDIFIER_TYPES: dict[str, HumidifierDescription] = {
 
 HEATER_TYPES: dict[str, HeaterDescription] = {
     PhilipsApi.NEW2_TARGET_TEMP: {
-        FanAttributes.TEMPERATURE: PhilipsApi.TEMPERATURE,
+        FanAttributes.TEMPERATURE: PhilipsApi.NEW2_TEMPERATURE,
         FanAttributes.POWER: PhilipsApi.NEW2_POWER,
         FanAttributes.ON: 1,
         FanAttributes.OFF: 0,
