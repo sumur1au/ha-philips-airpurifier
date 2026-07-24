@@ -40,13 +40,11 @@ class PhilipsHeater(PhilipsAirPurifierEntity, ClimateEntity):
     """Philips AirPurifier heater."""
 
     _attr_temperature_unit: str = UnitOfTemperature.CELSIUS
-    _attr_hvac_modes: list[HVACMode] = [
-        HVACMode.OFF,
-        HVACMode.HEAT,
-        HVACMode.AUTO,
-        HVACMode.FAN_ONLY,
-    ]
     _attr_target_temperature_step: float = 1.0
+
+    # Preset modes that should surface as HVACMode.AUTO. Some models (e.g.
+    # CX3120) only expose PresetMode.AUTO_PLUS rather than PresetMode.AUTO.
+    _AUTO_PRESET_MODES = (PresetMode.AUTO, PresetMode.AUTO_PLUS)
 
     def __init__(
         self,
@@ -57,7 +55,6 @@ class PhilipsHeater(PhilipsAirPurifierEntity, ClimateEntity):
         super().__init__(coordinator)
 
         model_config = coordinator.model_config
-        latest_status = coordinator.data or {}
 
         self._description = HEATER_TYPES[kind]
         self._attr_translation_key = "pap"
@@ -67,13 +64,19 @@ class PhilipsHeater(PhilipsAirPurifierEntity, ClimateEntity):
         self._preset_modes_map = model_config.preset_modes
         self._attr_preset_modes = list(self._preset_modes_map.keys())
 
+        hvac_modes = [HVACMode.OFF, HVACMode.HEAT]
+        if any(mode in self._preset_modes_map for mode in self._AUTO_PRESET_MODES):
+            hvac_modes.append(HVACMode.AUTO)
+        if PresetMode.VENTILATION in self._preset_modes_map:
+            hvac_modes.append(HVACMode.FAN_ONLY)
+        self._attr_hvac_modes = hvac_modes
+
         self._power_key = self._description[FanAttributes.POWER]
         self._temperature_target_key = kind.partition("#")[0]
+        self._temperature_current_key = self._description[FanAttributes.TEMPERATURE]
 
         self._attr_min_temp = self._description[FanAttributes.MIN_TEMPERATURE]
         self._attr_max_temp = self._description[FanAttributes.MAX_TEMPERATURE]
-        self._attr_target_temperature = latest_status.get(self._temperature_target_key)
-        self._attr_current_temperature = latest_status.get(self._description[FanAttributes.TEMPERATURE])
 
         self._attr_supported_features = (
             ClimateEntityFeature.TARGET_TEMPERATURE
@@ -97,11 +100,24 @@ class PhilipsHeater(PhilipsAirPurifierEntity, ClimateEntity):
         return self._device_status.get(self._temperature_target_key)
 
     @property
+    def current_temperature(self) -> float | None:
+        """Return the current (measured) temperature.
+
+        The NEW2 protocol reports this value in tenths of a degree
+        (e.g. 225 -> 22.5 C), matching the conversion the sensor
+        platform applies via _to_celsius_from_tenths for the same key.
+        """
+        value = self._device_status.get(self._temperature_current_key)
+        if isinstance(value, (int, float)):
+            return float(value) / 10
+        return None
+
+    @property
     def hvac_mode(self) -> HVACMode | None:  # pragma: no cover
         """Return the current HVAC mode."""
         if not self.is_on:
             return HVACMode.OFF
-        if self.preset_mode == PresetMode.AUTO:  # pragma: no cover
+        if self.preset_mode in self._AUTO_PRESET_MODES:  # pragma: no cover
             return HVACMode.AUTO
         if self.preset_mode == PresetMode.VENTILATION:  # pragma: no cover
             return HVACMode.FAN_ONLY
@@ -112,7 +128,13 @@ class PhilipsHeater(PhilipsAirPurifierEntity, ClimateEntity):
         if hvac_mode == HVACMode.OFF:
             await self.async_turn_off()
         elif hvac_mode == HVACMode.AUTO:
-            await self.async_set_preset_mode(PresetMode.AUTO)
+            # Prefer plain AUTO if the model supports it, otherwise fall
+            # back to AUTO_PLUS (e.g. CX3120).
+            auto_preset = next(
+                (mode for mode in self._AUTO_PRESET_MODES if mode in self._preset_modes_map),
+                PresetMode.AUTO,
+            )
+            await self.async_set_preset_mode(auto_preset)
         elif hvac_mode == HVACMode.FAN_ONLY:  # pragma: no cover
             await self.async_set_preset_mode(PresetMode.VENTILATION)
         elif hvac_mode == HVACMode.HEAT:
